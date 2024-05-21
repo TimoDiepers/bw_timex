@@ -953,6 +953,15 @@ class TimexLCA:
         pd.DataFrame, technosphere matrix as a pandas.DataFrame with comprehensible labels instead of ids.
         """
 
+        if not hasattr(self, "activity_time_mapping_labels_dict"):
+            self.activity_time_mapping_labels_dict = self.activity_time_mapping_dict.reversed()
+            
+            for ((database, code), time), idx in self.activity_time_mapping_dict.items():
+                database_time = self.database_date_dict[database]
+                if type(database_time) != str:
+                    if extract_date_as_integer(database_time, self.temporal_grouping) != time:
+                        self.activity_time_mapping_labels_dict[idx] = (("temporal market", code), time)
+        
         df = pd.DataFrame(self.technosphere_matrix.toarray())
         df.rename(  # from matrix id to activity id
             index=self.dicts.activity.reversed,
@@ -960,8 +969,8 @@ class TimexLCA:
             inplace=True,
         )
         df.rename(  # from activity id to ((database, code), time)
-            index=self.activity_time_mapping_dict.reversed(),
-            columns=self.activity_time_mapping_dict.reversed(),
+            index=self.activity_time_mapping_labels_dict,
+            columns=self.activity_time_mapping_labels_dict,
             inplace=True,
         )
         return df
@@ -978,7 +987,16 @@ class TimexLCA:
         -------
         pd.DataFrame, biosphere matrix as a pandas.DataFrame with comprehensible labels instead of ids.
         """
-
+        
+        if not hasattr(self, "activity_time_mapping_labels_dict"):
+            self.activity_time_mapping_labels_dict = self.activity_time_mapping_dict.reversed()
+            
+            for ((database, code), time), idx in self.activity_time_mapping_dict.items():
+                database_time = self.database_date_dict[database]
+                if type(database_time) != str:
+                    if extract_date_as_integer(database_time, self.temporal_grouping) != time:
+                        self.activity_time_mapping_labels_dict[idx] = (("temporal market", code), time)
+                        
         df = pd.DataFrame(self.biosphere_matrix.toarray())
         df.rename(  # from matrix id to activity id
             index=self.dicts.biosphere.reversed,
@@ -987,7 +1005,7 @@ class TimexLCA:
         )
         df.rename(
             index=self.remapping_dicts["biosphere"],  # from activity id to bioflow name
-            columns=self.activity_time_mapping_dict.reversed(),  # from activity id to ((database, code), time)
+            columns=self.activity_time_mapping_labels_dict,  # from activity id to ((database, code), time)
             inplace=True,
         )
 
