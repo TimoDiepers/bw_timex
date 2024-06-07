@@ -1,1 +1,2 @@
+from .fixtures.dynamic_characterization_fixture import point_emission_in_ten_years_db
 from .fixtures.vehicle_db_fixture import vehicle_db

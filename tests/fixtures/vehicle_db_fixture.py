@@ -1,7 +1,6 @@
-import pytest
 import bw2data as bd
 import numpy as np
-
+import pytest
 from bw2data.tests import bw2test
 from bw_temporalis import TemporalDistribution
 
