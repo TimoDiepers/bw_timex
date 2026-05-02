@@ -240,8 +240,12 @@ class MatrixModifier:
 
         # Apply temporal evolution scaling if present
         if hasattr(row, "temporal_evolution") and row.temporal_evolution is not None:
+            reference = getattr(row, "temporal_evolution_reference", "producer")
+            reference_date = (
+                row.date_consumer if reference == "consumer" else row.date_producer
+            )
             factor = get_temporal_evolution_factor(
-                row.temporal_evolution, row.date_producer
+                row.temporal_evolution, reference_date
             )
             scaled_amount *= factor
 

@@ -481,6 +481,7 @@ def add_temporal_distribution_to_exchange(
 def add_temporal_evolution_to_exchange(
     temporal_evolution_factors: dict = None,
     temporal_evolution_amounts: dict = None,
+    temporal_evolution_reference: str = "producer",
     **kwargs,
 ):
     """Add temporal evolution data to an exchange specified by kwargs.
@@ -491,6 +492,8 @@ def add_temporal_evolution_to_exchange(
         Dictionary mapping datetime keys to scaling factors.
     temporal_evolution_amounts : dict, optional
         Dictionary mapping datetime keys to absolute amounts.
+    temporal_evolution_reference : {"producer", "consumer"}, optional
+        Whether temporal evolution is evaluated at producer or consumer timestamps.
     **kwargs :
         Arguments to specify an exchange (same as get_exchange).
 
@@ -504,12 +507,14 @@ def add_temporal_evolution_to_exchange(
     TemporalEvolutionExchangeInputs(
         temporal_evolution_factors=temporal_evolution_factors,
         temporal_evolution_amounts=temporal_evolution_amounts,
+        temporal_evolution_reference=temporal_evolution_reference,
     )
     exchange = get_exchange(**kwargs)
     if temporal_evolution_factors is not None:
         exchange["temporal_evolution_factors"] = temporal_evolution_factors
     if temporal_evolution_amounts is not None:
         exchange["temporal_evolution_amounts"] = temporal_evolution_amounts
+    exchange["temporal_evolution_reference"] = temporal_evolution_reference
     exchange.save()
     logger.info(f"Added temporal evolution to exchange {exchange}.")
 

@@ -177,6 +177,7 @@ class TemporalEvolutionExchangeInputs(BaseModel):
 
     temporal_evolution_factors: Optional[dict] = None
     temporal_evolution_amounts: Optional[dict] = None
+    temporal_evolution_reference: Literal["producer", "consumer"] = "producer"
 
     @model_validator(mode="after")
     def validate_mutual_exclusivity(self) -> "TemporalEvolutionExchangeInputs":

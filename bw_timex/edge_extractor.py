@@ -36,6 +36,7 @@ class Edge:
     abs_td_producer: TemporalDistribution = None
     abs_td_consumer: TemporalDistribution = None
     temporal_evolution: dict = None
+    temporal_evolution_reference: str = "producer"
 
 
 class EdgeExtractor(TemporalisLCA):
@@ -163,6 +164,9 @@ class EdgeExtractor(TemporalisLCA):
                         }
                 elif has_factors:
                     temporal_evolution = exc_data["temporal_evolution_factors"]
+                temporal_evolution_reference = exc_data.get(
+                    "temporal_evolution_reference", "producer"
+                )
 
                 td_producer = (  # td_producer is the TemporalDistribution of the edge
                     self._exchange_value(
@@ -201,6 +205,7 @@ class EdgeExtractor(TemporalisLCA):
                         ),
                         abs_td_consumer=abs_td,
                         temporal_evolution=temporal_evolution,
+                        temporal_evolution_reference=temporal_evolution_reference,
                     )
                 )
                 if not leaf:
