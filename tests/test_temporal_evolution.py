@@ -340,3 +340,77 @@ def test_temporal_evolution_score_matches_hardcoded():
     static_lca.lcia()
 
     assert tlca.static_score == pytest.approx(static_lca.score, rel=1e-4)
+
+
+@bw2test
+def test_temporal_evolution_reference_consumer_vs_producer():
+    """Temporal evolution can be evaluated at consumer (vintage) time or producer time."""
+    bd.Database("bio").write(
+        {("bio", "CO2"): {"type": "emission", "name": "carbon dioxide"}}
+    )
+
+    for db_name in ("db_2020", "db_2030"):
+        bd.Database(db_name).write(
+            {
+                (db_name, "electricity"): {
+                    "name": "electricity production",
+                    "reference product": "electricity",
+                    "location": "GLO",
+                    "exchanges": [
+                        {"amount": 1, "type": "production", "input": (db_name, "electricity")},
+                        {"amount": 1, "type": "biosphere", "input": ("bio", "CO2")},
+                    ],
+                }
+            }
+        )
+
+    bd.Method(("GWP", "example")).write([(("bio", "CO2"), 1.0)])
+
+    td_use = TemporalDistribution(
+        date=np.array([5], dtype="timedelta64[Y]"), amount=np.array([1.0])
+    )
+
+    def run_model(reference: str) -> float:
+        bd.Database("foreground").write(
+            {
+                ("foreground", "consumer"): {
+                    "name": "consumer",
+                    "reference product": "unit",
+                    "location": "GLO",
+                    "exchanges": [
+                        {"amount": 1, "type": "production", "input": ("foreground", "consumer")},
+                        {
+                            "amount": 10,
+                            "type": "technosphere",
+                            "input": ("db_2020", "electricity"),
+                            "temporal_distribution": td_use,
+                            "temporal_evolution_factors": {
+                                datetime(2025, 1, 1): 1.0,
+                                datetime(2030, 1, 1): 2.0,
+                            },
+                            "temporal_evolution_reference": reference,
+                        },
+                    ],
+                }
+            }
+        )
+
+        database_dates = {
+            "db_2020": datetime(2020, 1, 1),
+            "db_2030": datetime(2030, 1, 1),
+            "foreground": "dynamic",
+        }
+        tlca = TimexLCA(
+            demand={("foreground", "consumer"): 1},
+            method=("GWP", "example"),
+            database_dates=database_dates,
+        )
+        tlca.build_timeline(starting_datetime=datetime(2025, 1, 1))
+        tlca.lci()
+        tlca.static_lcia()
+        return tlca.static_score
+
+    score_consumer_ref = run_model("consumer")
+    score_producer_ref = run_model("producer")
+
+    assert score_producer_ref == pytest.approx(2 * score_consumer_ref, rel=1e-6)

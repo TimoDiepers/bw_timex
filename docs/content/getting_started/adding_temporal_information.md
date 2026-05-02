@@ -287,7 +287,9 @@ exchange["temporal_evolution_amounts"] = {
 }
 ```
 
-For dates between the specified points, values are linearly interpolated. For dates outside the range, the nearest boundary value is used. You can specify either `temporal_evolution_amounts` or `temporal_evolution_amounts` for the same exchange, but not both.
+For dates between the specified points, values are linearly interpolated. For dates outside the range, the nearest boundary value is used. You can specify either `temporal_evolution_factors` or `temporal_evolution_amounts` for the same exchange, but not both.
+
+This mechanism can represent **vintage-specific efficiency** if the exchange is evaluated at the vintage timestamp. For example, with factors `{2025: 1.0, 2030: 1.1}`, a unit produced in 2025 uses the 2025 factor and a unit produced in 2030 uses the 2030 factor (with interpolation in-between). If a single foreground exchange represents a mixed fleet over multiple vintages, that one exchange still has just one amount at each event time; to model distinct vintages explicitly, create separate exchanges or processes per cohort (e.g., EV_2025, EV_2030) and assign their temporal distributions accordingly.
 
 A convenience function is available to add temporal evolution to an existing exchange:
 
