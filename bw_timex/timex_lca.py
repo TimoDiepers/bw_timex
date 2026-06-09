@@ -23,6 +23,7 @@ from bw2data import (
 from bw2data.backends.schema import ActivityDataset as AD
 from bw2data.backends.schema import get_id
 from bw2data.errors import Brightway2Project
+from bw_temporalis import TemporalDistribution
 from dynamic_characterization import characterize
 from loguru import logger
 from peewee import fn
@@ -149,6 +150,22 @@ class TimexLCA:
         TimexLCAInputs(
             demand=self.demand, method=self.method, database_dates=self.database_dates
         )
+
+        # Demand values can be either scalars or `TemporalDistribution` instances.
+        # A TD demand says "this much of the product is consumed over this time profile";
+        # internally we keep the scalar total in `self.demand` (for bw2calc) and stash
+        # the TD by node id in `self.demand_temporal_distributions` to override the FU
+        # init in the graph traversal.
+        self.demand_temporal_distributions: dict[int, TemporalDistribution] = {}
+        normalized_demand = {}
+        for key, value in self.demand.items():
+            if isinstance(value, TemporalDistribution):
+                node_id = key.id if hasattr(key, "id") else bd.get_activity(key).id
+                self.demand_temporal_distributions[node_id] = value
+                normalized_demand[key] = float(np.abs(value.amount).sum())
+            else:
+                normalized_demand[key] = value
+        self.demand = normalized_demand
 
         logger.info("Calculating base LCA...")
         # Calculate static LCA results using a custom prepare_lca_inputs function that includes all
@@ -344,6 +361,7 @@ class TimexLCA:
             self.cutoff,
             self.max_calc,
             graph_traversal=graph_traversal,
+            demand_temporal_distributions=self.demand_temporal_distributions,
             *args,
             **kwargs,
         )

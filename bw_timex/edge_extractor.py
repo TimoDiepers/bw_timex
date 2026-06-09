@@ -53,7 +53,13 @@ class EdgeExtractor(TemporalisLCA):
     using Brightway Datapackages.
     """
 
-    def __init__(self, *args, edge_filter_function: Callable = None, **kwargs) -> None:
+    def __init__(
+        self,
+        *args,
+        edge_filter_function: Callable = None,
+        demand_temporal_distributions: dict | None = None,
+        **kwargs,
+    ) -> None:
         """
         Initialize the EdgeExtractor class and traverses the supply chain using
         functions of the parent class TemporalisLCA.
@@ -78,6 +84,8 @@ class EdgeExtractor(TemporalisLCA):
             self.edge_ff = edge_filter_function
         else:
             self.edge_ff = lambda x: False
+
+        self.demand_temporal_distributions = demand_temporal_distributions or {}
 
     def build_edge_timeline(self) -> list:
         """
@@ -107,13 +115,26 @@ class EdgeExtractor(TemporalisLCA):
             self.unique_id
         ]:  # starting at the edges of the functional unit
             node = self.nodes[edge.producer_unique_id]
-            td_producer = edge.amount
-            initial_distribution = self.t0 * edge.amount
-            abs_td_producer = self.t0
-            abs_td_consumer = None
-
             row_id = self.lca_object.dicts.product.reversed[edge.product_index]
             col_id = node.activity_datapackage_id
+
+            # A `demand` value of a `TemporalDistribution` replaces the implicit
+            # single-point `t0` for this FU: the demand profile itself becomes the
+            # absolute timing of consumption. Scale falls out of TD amounts; we
+            # treat the FU amount as 1 here because the TD already carries it.
+            demand_td = self.demand_temporal_distributions.get(row_id)
+            if demand_td is not None:
+                t0_eff = demand_td
+                edge_amount_eff = 1.0
+            else:
+                t0_eff = self.t0
+                edge_amount_eff = edge.amount
+
+            td_producer = edge_amount_eff
+            initial_distribution = t0_eff * edge_amount_eff
+            abs_td_producer = t0_eff
+            abs_td_consumer = None if demand_td is None else t0_eff
+
             exchange = self.get_technosphere_exchange(input_id=row_id, output_id=col_id)
 
             # In the explicit process/product paradigm, the demanded product is produced
@@ -137,25 +158,40 @@ class EdgeExtractor(TemporalisLCA):
                         matrix_label="technosphere_matrix",
                     )
                     / production_amount
-                    * edge.amount
+                    * edge_amount_eff
                 )
                 if isinstance(td_producer, Number):
                     td_producer = TemporalDistribution(
                         date=np.array([0], dtype="timedelta64[Y]"),
                         amount=np.array([td_producer]),
                     )
-                initial_distribution = (self.t0 * td_producer).simplify()
+                initial_distribution = (t0_eff * td_producer).simplify()
                 abs_td_producer = self.join_datetime_and_timedelta_distributions(
-                    td_producer, self.t0
+                    td_producer, t0_eff
                 )
-                abs_td_consumer = self.t0
+                abs_td_consumer = t0_eff
+
+            # `join_datetime_and_timedelta_distributions` only carries producer
+            # amounts forward (consumer is normally a unit `t0`). When the demand
+            # is a TD with non-unit cohort amounts, we need to broadcast the
+            # consumer amounts onto the FU edge so downstream sees the right
+            # fleet sizes per cohort.
+            if demand_td is not None and isinstance(abs_td_producer, TemporalDistribution):
+                if isinstance(td_producer, TemporalDistribution):
+                    prod_amount = td_producer.amount
+                else:
+                    prod_amount = np.array([td_producer])
+                scaled = (
+                    t0_eff.amount.reshape(-1, 1) * prod_amount.reshape(1, -1)
+                ).ravel()
+                abs_td_producer = TemporalDistribution(abs_td_producer.date, scaled)
 
             heappush(
                 heap,
                 (
                     1 / node.cumulative_score,
                     initial_distribution,
-                    self.t0,
+                    t0_eff,
                     abs_td_producer,
                     node,
                 ),
@@ -169,7 +205,7 @@ class EdgeExtractor(TemporalisLCA):
                     consumer=self.unique_id,
                     producer=node.activity_datapackage_id,
                     td_producer=td_producer,
-                    td_consumer=self.t0,
+                    td_consumer=t0_eff,
                     abs_td_producer=abs_td_producer,
                     abs_td_consumer=abs_td_consumer,
                 )
@@ -374,11 +410,13 @@ class EdgeExtractorBFS:
         edge_filter_function: Callable = None,
         cutoff: float = 1e-9,
         static_activity_indices: set[int] | None = None,
+        demand_temporal_distributions: dict | None = None,
     ) -> None:
         self.lca_object = lca_object
         self.edge_ff = edge_filter_function if edge_filter_function else lambda x: False
         self.cutoff = cutoff
         self.static_activity_indices = static_activity_indices or set()
+        self.demand_temporal_distributions = demand_temporal_distributions or {}
 
         if isinstance(starting_datetime, str):
             if starting_datetime == "now":
@@ -493,8 +531,15 @@ class EdgeExtractorBFS:
         total_demand = float(np.abs(demand_array).sum())
 
         for fu_id in fu_activity_ids:
-            fu_amount = demand_array[self.lca_object.dicts.activity[fu_id]]
-            td = self.t0 * fu_amount
+            demand_td = self.demand_temporal_distributions.get(fu_id)
+            if demand_td is not None:
+                td = demand_td
+                fu_amount = float(np.abs(demand_td.amount).sum())
+                t0_eff = demand_td
+            else:
+                fu_amount = demand_array[self.lca_object.dicts.activity[fu_id]]
+                td = self.t0 * fu_amount
+                t0_eff = self.t0
 
             timeline.append(
                 Edge(
@@ -504,12 +549,12 @@ class EdgeExtractorBFS:
                     consumer=-1,
                     producer=fu_id,
                     td_producer=fu_amount,
-                    td_consumer=self.t0,
-                    abs_td_producer=self.t0,
+                    td_consumer=t0_eff,
+                    abs_td_producer=t0_eff,
                 )
             )
 
-            queue.append((fu_id, td, self.t0, self.t0, abs(fu_amount)))
+            queue.append((fu_id, td, t0_eff, t0_eff, abs(fu_amount)))
 
         while queue:
             node_id, td, td_parent, abs_td, supply = queue.popleft()

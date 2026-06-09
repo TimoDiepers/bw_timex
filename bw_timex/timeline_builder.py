@@ -42,6 +42,7 @@ class TimelineBuilder:
         cutoff: float = 1e-9,
         max_calc: int = 2000,
         graph_traversal: str = "priority",
+        demand_temporal_distributions: dict | None = None,
         *args,
         **kwargs,
     ) -> None:
@@ -101,6 +102,7 @@ class TimelineBuilder:
         }
 
         logger.info("Traversing supply chain graph...")
+        self.demand_temporal_distributions = demand_temporal_distributions or {}
         if graph_traversal == "bfs":
             self.edge_extractor = EdgeExtractorBFS(
                 lca_object=base_lca,
@@ -108,6 +110,7 @@ class TimelineBuilder:
                 edge_filter_function=edge_filter_function,
                 cutoff=self.cutoff,
                 static_activity_indices=set(static_background_activity_ids),
+                demand_temporal_distributions=self.demand_temporal_distributions,
             )
         elif graph_traversal == "priority":
             self.edge_extractor = EdgeExtractor(
@@ -118,6 +121,7 @@ class TimelineBuilder:
                 cutoff=self.cutoff,
                 max_calc=self.max_calc,
                 static_activity_indices=set(static_background_activity_ids),
+                demand_temporal_distributions=self.demand_temporal_distributions,
                 **kwargs,
             )
         else:
@@ -210,6 +214,38 @@ class TimelineBuilder:
         )
         edges_df["producer_grouping_time"] = edges_df["rounded_producer_date"].apply(
             lambda x: extract_date_as_string(x, self.temporal_grouping)
+        )
+
+        # Collapse coefficients that converge on the same time-mapped edge via
+        # different supply-chain paths. The per-unit coefficient of a time-mapped
+        # edge must be emitted once per (consumer cohort bucket, producer bucket),
+        # but when several consumer paths reach one producer cohort (e.g. a
+        # backward relative TD where a product demanded in several years is served
+        # by one earlier-built cohort) the same coefficient is replicated once per
+        # path. The `drop_duplicates` above keys on raw datetimes, which drift
+        # (datetime64[s] + timedelta64[Y] uses an average-length year), so those
+        # duplicates survive and would be summed by the groupby below.
+        #
+        # The relative offset (producer - consumer) IS the edge's own TD entry: it
+        # is path-independent and exact, so it separates "same edge entry reached
+        # by multiple paths" (drop here) from "distinct sub-window entries that
+        # round into the same bucket" (different offset -> kept and summed below).
+        edges_df["relative_offset"] = pd.to_datetime(
+            edges_df["producer_date"], errors="coerce"
+        ) - pd.to_datetime(edges_df["consumer_date"], errors="coerce")
+        edges_df.drop_duplicates(
+            subset=[
+                "producer",
+                "consumer",
+                "consumer_grouping_time",
+                "producer_grouping_time",
+                "relative_offset",
+                "amount",
+                "edge_type",
+                "_te_key",
+                "temporal_evolution_reference",
+            ],
+            inplace=True,
         )
 
         # group unique pair of consumer and producer with the same grouping times

@@ -21,9 +21,17 @@ class TimexLCAInputs(BaseModel):
         if not v:
             raise ValueError("demand must be a non-empty dictionary.")
         for key, value in v.items():
+            if isinstance(value, TemporalDistribution):
+                if value.date.dtype.kind != "M":
+                    raise ValueError(
+                        f"demand TemporalDistribution for key {key} must use absolute "
+                        f"datetime dates (datetime64), got dtype {value.date.dtype}."
+                    )
+                continue
             if not isinstance(value, (int, float)):
                 raise ValueError(
-                    f"demand values must be numeric, got {type(value).__name__} for key {key}."
+                    f"demand values must be numeric or a TemporalDistribution, "
+                    f"got {type(value).__name__} for key {key}."
                 )
         return v
 
